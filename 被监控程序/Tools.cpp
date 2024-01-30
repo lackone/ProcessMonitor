@@ -1,7 +1,7 @@
 #include "Tools.h"
 
 /**
- * 将TCHAR转换成为CHAR
+ * 
  */
 VOID Tools::TCHARToChar(IN LPCTSTR tstr, OUT LPSTR* str)
 {
