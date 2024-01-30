@@ -10,12 +10,19 @@
 typedef int (WINAPI* MBA)(HWND, LPCSTR, LPCSTR, UINT);
 typedef HANDLE(WINAPI* CFA)(LPCSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
 typedef HANDLE(WINAPI* CFW)(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
+typedef BOOL(WINAPI* CPA)(LPCSTR, LPSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCSTR, LPSTARTUPINFOA, LPPROCESS_INFORMATION);
+typedef HANDLE(WINAPI* OP)(DWORD, BOOL, DWORD);
 
 //窗口句柄
 HWND pidEdit;
 HWND msgBoxMonitorBtn;
 HWND createFileMonitorBtn;
 HWND openProcessMonitorBtn;
+HWND msgBoxCallTitle;
+HWND msgBoxCallContent;
+HWND createFileCallPath;
+HWND createFileCallContent;
+HWND openProcessCallPath;
 //用于判断监控是否开启
 BOOL isMsgBoxMonitor = FALSE;
 BOOL isCreateFileMonitor = FALSE;
@@ -40,7 +47,7 @@ DWORD dwDesiredAccess;
 BOOL bInheritHandle;
 DWORD dwProcessId;
 LPVOID oldData;
-//OpenProcess函数的基址
+//OpenProcess函数的基址，这个地址你们测试时需要自行修改
 DWORD openProcessAddress = 0x75BEFC00;
 DWORD oldJmp;
 
@@ -106,6 +113,7 @@ HANDLE WINAPI MyCreateFileA(
 	WaitForSingleObject(monitorLogEvent, INFINITE);
 	cfw = (CFW)GetProcAddress(LoadLibrary(TEXT("Kernel32.dll")), "CreateFileW");
 	HANDLE log = cfw(monitorLogPath, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	SetFilePointer(log, 0, NULL, FILE_END);
 	//写入监控文件
 	if (!WriteFile(log, buf, strlen(buf) + 1, NULL, NULL))
 	{
@@ -139,6 +147,7 @@ extern "C" __declspec(naked) void myOpenProcess()
 	//参数一为 EBP + 0x8
 	//参数二为 EBP + 0xc
 
+	//获取参数
 	__asm
 	{
 		mov EAX, dword ptr[EBP + 0x8]
@@ -234,6 +243,7 @@ DWORD WINAPI InjectEntry(LPVOID pImageBuffer)
 	DataPacket dpt;
 	while (TRUE)
 	{
+		//等待事件，防止数据读取错乱
 		WaitForSingleObject(read, INFINITE);
 		ResetEvent(read);
 
@@ -277,6 +287,7 @@ DWORD WINAPI InjectEntry(LPVOID pImageBuffer)
 		{
 			//获取原函数地址
 			//FARPROC openProcess = GetProcAddress(LoadLibrary(TEXT("Kernel32.dll")), "OpenProcess");
+			//这里获取的地址并不是OpenProcess真正的地址，因为在VS中，函数会转一道，就是JMP一下才会是真正的函数地址，所以我在上面写死了
 
 			oldJmp = (DWORD)openProcessAddress + 8 + 5;
 
@@ -286,8 +297,74 @@ DWORD WINAPI InjectEntry(LPVOID pImageBuffer)
 		{
 			//获取原函数地址
 			//FARPROC openProcess = GetProcAddress(LoadLibrary(TEXT("Kernel32.dll")), "OpenProcess");
+			//这里获取的地址并不是OpenProcess真正的地址，因为在VS中，函数会转一道，就是JMP一下才会是真正的函数地址，所以我在上面写死了
 
 			pe.UnInstallInlineHook(injectProcess, (DWORD)openProcessAddress, 8, 5, oldData);
+		}
+		if (strcmp(dpt.method, "MsgBoxCall") == 0)
+		{
+			MBA mba = (MBA)GetProcAddress(LoadLibrary(TEXT("user32.dll")), "MessageBoxA");
+
+			LPCSTR text = NULL;
+			LPCSTR title = NULL;
+
+			dpt.ParseMsgBoxAParams(&text, &title);
+
+			tools.OutputDebugStringFormatA("MsgBoxCall %s %s\n", text, title);
+
+			mba(NULL, text, title, MB_OK);
+
+			free((void*)text);
+			free((void*)title);
+		}
+		if (strcmp(dpt.method, "CreateFileCall") == 0)
+		{
+			CFA cfa = (CFA)GetProcAddress(LoadLibrary(TEXT("Kernel32.dll")), "CreateFileA");
+
+			LPCSTR fileName = NULL;
+			LPCSTR content = NULL;
+
+			dpt.ParseCreateFileAParams(&fileName, &content);
+
+			tools.OutputDebugStringFormatA("CreateFileCall %s %s\n", fileName, content);
+
+			HANDLE hFile = cfa(fileName, GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+			SetFilePointer(hFile, 0, NULL, FILE_END);
+			WriteFile(hFile, content, strlen(content) + 1, NULL, NULL);
+			CloseHandle(hFile);
+
+			free((void*)fileName);
+			free((void*)content);
+		}
+		if (strcmp(dpt.method, "OpenProcessCall") == 0)
+		{
+			CPA cpa = (CPA)GetProcAddress(LoadLibrary(TEXT("Kernel32.dll")), "CreateProcessA");
+
+			LPCSTR applicationName = NULL;
+			LPCSTR commandLine = NULL;
+
+			dpt.ParseOpenProcessAParams(&applicationName, &commandLine);
+
+			tools.OutputDebugStringFormatA("OpenProcessCall %s %s\n", applicationName, commandLine);
+
+			STARTUPINFOA si{ 0 };
+			si.cb = sizeof(si);
+			PROCESS_INFORMATION pi{ 0 };
+
+			if (cpa(NULL, (LPSTR)commandLine, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+			{
+				OP op = (OP)GetProcAddress(LoadLibrary(TEXT("Kernel32.dll")), "OpenProcess");
+
+				HANDLE hProcess = op(PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId);
+
+				CloseHandle(hProcess);
+			}
+			else {
+				tools.OutputDebugStringFormatA("OpenProcessCall error %d\n", GetLastError());
+			}
+
+			free((void*)applicationName);
+			free((void*)commandLine);
 		}
 
 		SetEvent(write);
@@ -491,6 +568,94 @@ DWORD WINAPI OpenProcessMonitor(LPVOID lpThreadParameter)
 	return 0;
 }
 
+/**
+ * 远程调用
+ */
+DWORD WINAPI MsgBoxCall(LPVOID lpThreadParameter)
+{
+	WaitForSingleObject(hMapViewWrite, INFINITE);
+	ResetEvent(hMapViewWrite);
+
+	TCHAR title[MAX_PATH]{ 0 };
+	GetWindowText(msgBoxCallTitle, title, MAX_PATH);
+	TCHAR content[MAX_PATH]{ 0 };
+	GetWindowText(msgBoxCallContent, content, MAX_PATH);
+
+	LPSTR titleStr = NULL;
+	LPSTR contentStr = NULL;
+
+	tools.TCHARToChar(title, &titleStr);
+	tools.TCHARToChar(content, &contentStr);
+
+	dp.SetMethod("MsgBoxCall");
+	dp.SetMsgBoxAParams(contentStr, titleStr);
+	dp.MapViewWriteData(hMapView);
+
+	SetEvent(hMapViewRead);
+
+	free(titleStr);
+	free(contentStr);
+
+	return 0;
+}
+
+/**
+ * 远程调用
+ */
+DWORD WINAPI CreateFileCall(LPVOID lpThreadParameter)
+{
+	WaitForSingleObject(hMapViewWrite, INFINITE);
+	ResetEvent(hMapViewWrite);
+
+	TCHAR path[MAX_PATH]{ 0 };
+	GetWindowText(createFileCallPath, path, MAX_PATH);
+	TCHAR content[MAX_PATH]{ 0 };
+	GetWindowText(createFileCallContent, content, MAX_PATH);
+
+	LPSTR pathStr = NULL;
+	LPSTR contentStr = NULL;
+
+	tools.TCHARToChar(path, &pathStr);
+	tools.TCHARToChar(content, &contentStr);
+
+	dp.SetMethod("CreateFileCall");
+	dp.SetCreateFileAParams(pathStr, contentStr);
+	dp.MapViewWriteData(hMapView);
+
+	SetEvent(hMapViewRead);
+
+	free(pathStr);
+	free(contentStr);
+
+	return 0;
+}
+
+/**
+ * 远程调用
+ */
+DWORD WINAPI OpenProcessCall(LPVOID lpThreadParameter)
+{
+	WaitForSingleObject(hMapViewWrite, INFINITE);
+	ResetEvent(hMapViewWrite);
+
+	TCHAR path[MAX_PATH]{ 0 };
+	GetWindowText(openProcessCallPath, path, MAX_PATH);
+
+	LPSTR pathStr = NULL;
+
+	tools.TCHARToChar(path, &pathStr);
+
+	dp.SetMethod("OpenProcessCall");
+	dp.SetOpenProcessAParams("", pathStr);
+	dp.MapViewWriteData(hMapView);
+
+	SetEvent(hMapViewRead);
+
+	free(pathStr);
+
+	return 0;
+}
+
 INT_PTR CALLBACK dlgProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (uMsg)
@@ -501,6 +666,12 @@ INT_PTR CALLBACK dlgProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		msgBoxMonitorBtn = GetDlgItem(hwnd, IDC_BUTTON_MSGBOX_MONITOR);
 		createFileMonitorBtn = GetDlgItem(hwnd, IDC_BUTTON_CREATEFILE_MONITOR);
 		openProcessMonitorBtn = GetDlgItem(hwnd, IDC_BUTTON_OPENPROCESS_MONITOR);
+
+		msgBoxCallTitle = GetDlgItem(hwnd, IDC_EDIT_MSGBOX_CALL_TITLE);
+		msgBoxCallContent = GetDlgItem(hwnd, IDC_EDIT_MSGBOX_CALL_CONTENT);
+		createFileCallPath = GetDlgItem(hwnd, IDC_EDIT_CREATEFILE_PATH);
+		createFileCallContent = GetDlgItem(hwnd, IDC_EDIT_CREATEFILE_CONTENT);
+		openProcessCallPath = GetDlgItem(hwnd, IDC_EDIT_OPENPROCESS_PAHT);
 
 		//创建监控Log
 		TCHAR exePath[MAX_PATH]{ 0 };
@@ -582,17 +753,23 @@ INT_PTR CALLBACK dlgProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		break;
 		case IDC_BUTTON_MSGBOX_CALL:
 		{
-
+			//MessageBoxA远程调用
+			HANDLE ht = CreateThread(NULL, 0, MsgBoxCall, NULL, 0, NULL);
+			CloseHandle(ht);
 		}
 		break;
 		case IDC_BUTTON_CREATEFILE_CALL:
 		{
-
+			//CreateFileA远程调用
+			HANDLE ht = CreateThread(NULL, 0, CreateFileCall, NULL, 0, NULL);
+			CloseHandle(ht);
 		}
 		break;
 		case IDC_BUTTON_OPENPROCESS_CALL:
 		{
-
+			//OpenProcess远程调用
+			HANDLE ht = CreateThread(NULL, 0, OpenProcessCall, NULL, 0, NULL);
+			CloseHandle(ht);
 		}
 		break;
 		}

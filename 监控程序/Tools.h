@@ -14,5 +14,7 @@ public:
 	static VOID OutputDebugStringFormat(const TCHAR* format, ...);
 	//调试输出
 	static VOID OutputDebugStringFormatA(const CHAR* format, ...);
+	//将TCHAR转换成CHAR
+	VOID TCHARToChar(IN LPCTSTR tstr, OUT LPSTR* str);
 };
 

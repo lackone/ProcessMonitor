@@ -34,13 +34,9 @@ VOID DataPacket::SetParams(IN LPCSTR params)
 }
 
 /**
- * MessageBoxA的参数HWND也无法传递
+ * MessageBoxA的参数
  */
-VOID DataPacket::SetMsgBoxA(
-	_In_opt_ LPCSTR lpText,
-	_In_opt_ LPCSTR lpCaption,
-	_In_ UINT uType
-)
+VOID DataPacket::SetMsgBoxAParams(IN LPCSTR lpText, IN LPCSTR lpCaption)
 {
 	yyjson_mut_doc* doc = yyjson_mut_doc_new(NULL);
 	yyjson_mut_val* root = yyjson_mut_obj(doc);
@@ -49,7 +45,6 @@ VOID DataPacket::SetMsgBoxA(
 
 	yyjson_mut_obj_add_str(doc, root, "lpText", lpText);
 	yyjson_mut_obj_add_str(doc, root, "lpCaption", lpCaption);
-	yyjson_mut_obj_add_uint(doc, root, "uType", uType);
 
 	LPCSTR json = yyjson_mut_write(doc, 0, NULL);
 	if (json) {
@@ -61,25 +56,43 @@ VOID DataPacket::SetMsgBoxA(
 }
 
 /**
- * CreateFileA另外两个参数，一个指针lpSecurityAttributes，一个hTemplateFile，通过进程间通信传过去数据也是无效的。
+ * 解析MessageBoxA的参数
  */
-VOID DataPacket::SetCreateFileA(
-	_In_ LPCSTR lpFileName,
-	_In_ DWORD dwDesiredAccess,
-	_In_ DWORD dwShareMode,
-	_In_ DWORD dwCreationDisposition,
-	_In_ DWORD dwFlagsAndAttributes
-)
+VOID DataPacket::ParseMsgBoxAParams(OUT LPCSTR* lpText, OUT LPCSTR* lpCaption)
+{
+	yyjson_doc* doc = yyjson_read(params, strlen(params), 0);
+	yyjson_val* root = yyjson_doc_get_root(doc);
+
+	yyjson_val* text = yyjson_obj_get(root, "lpText");
+	LPCSTR textTmp = yyjson_get_str(text);
+	size_t len = strlen(textTmp) + 1;
+	LPCSTR textBuf = (LPCSTR)malloc(len);
+	memset((void*)textBuf, 0, len);
+	strcpy_s((char*)textBuf, len, textTmp);
+	*lpText = textBuf;
+
+	yyjson_val* caption = yyjson_obj_get(root, "lpCaption");
+	LPCSTR captionTmp = yyjson_get_str(caption);
+	len = strlen(captionTmp) + 1;
+	LPCSTR captionBuf = (LPCSTR)malloc(len);
+	memset((void*)captionBuf, 0, len);
+	strcpy_s((char*)captionBuf, len, captionTmp);
+	*lpCaption = captionBuf;
+
+	yyjson_doc_free(doc);
+}
+
+/**
+ * CreateFileA的参数
+ */
+VOID DataPacket::SetCreateFileAParams(IN LPCSTR lpFileName, IN LPCSTR lpContent)
 {
 	yyjson_mut_doc* doc = yyjson_mut_doc_new(NULL);
 	yyjson_mut_val* root = yyjson_mut_obj(doc);
 	yyjson_mut_doc_set_root(doc, root);
 
-	yyjson_mut_obj_add_str(doc, root, "lpText", lpFileName);
-	yyjson_mut_obj_add_uint(doc, root, "dwDesiredAccess", dwDesiredAccess);
-	yyjson_mut_obj_add_uint(doc, root, "dwShareMode", dwShareMode);
-	yyjson_mut_obj_add_uint(doc, root, "dwCreationDisposition", dwCreationDisposition);
-	yyjson_mut_obj_add_uint(doc, root, "dwFlagsAndAttributes", dwFlagsAndAttributes);
+	yyjson_mut_obj_add_str(doc, root, "lpFileName", lpFileName);
+	yyjson_mut_obj_add_str(doc, root, "lpContent", lpContent);
 
 	LPCSTR json = yyjson_mut_write(doc, 0, NULL);
 	if (json) {
@@ -89,6 +102,82 @@ VOID DataPacket::SetCreateFileA(
 
 	yyjson_mut_doc_free(doc);
 }
+
+/**
+ * 解析CreateFileA的参数
+ */
+VOID DataPacket::ParseCreateFileAParams(OUT LPCSTR* lpFileName, OUT LPCSTR* lpContent)
+{
+	yyjson_doc* doc = yyjson_read(params, strlen(params), 0);
+	yyjson_val* root = yyjson_doc_get_root(doc);
+
+	yyjson_val* fileName = yyjson_obj_get(root, "lpFileName");
+	LPCSTR fileNameTmp = yyjson_get_str(fileName);
+	size_t len = strlen(fileNameTmp) + 1;
+	LPCSTR fileNameBuf = (LPCSTR)malloc(len);
+	memset((void*)fileNameBuf, 0, len);
+	strcpy_s((char*)fileNameBuf, len, fileNameTmp);
+	*lpFileName = fileNameBuf;
+
+	yyjson_val* content = yyjson_obj_get(root, "lpContent");
+	LPCSTR contentTmp = yyjson_get_str(content);
+	len = strlen(contentTmp) + 1;
+	LPCSTR contentBuf = (LPCSTR)malloc(len);
+	memset((void*)contentBuf, 0, len);
+	strcpy_s((char*)contentBuf, len, contentTmp);
+	*lpContent = contentBuf;
+
+	yyjson_doc_free(doc);
+}
+
+/**
+ * OpenProcess的参数
+ */
+VOID DataPacket::SetOpenProcessAParams(IN LPCSTR lpApplicationName, IN LPCSTR lpCommandLine)
+{
+	yyjson_mut_doc* doc = yyjson_mut_doc_new(NULL);
+	yyjson_mut_val* root = yyjson_mut_obj(doc);
+	yyjson_mut_doc_set_root(doc, root);
+
+	yyjson_mut_obj_add_str(doc, root, "lpApplicationName", lpApplicationName);
+	yyjson_mut_obj_add_str(doc, root, "lpCommandLine", lpCommandLine);
+
+	LPCSTR json = yyjson_mut_write(doc, 0, NULL);
+	if (json) {
+		SetParams(json);
+		free((void*)json);
+	}
+
+	yyjson_mut_doc_free(doc);
+}
+
+/**
+ * 解析OpenProcess的参数
+ */
+VOID DataPacket::ParseOpenProcessAParams(OUT LPCSTR* lpApplicationName, OUT LPCSTR* lpCommandLine)
+{
+	yyjson_doc* doc = yyjson_read(params, strlen(params), 0);
+	yyjson_val* root = yyjson_doc_get_root(doc);
+
+	yyjson_val* applicationName = yyjson_obj_get(root, "lpApplicationName");
+	LPCSTR applicationNameTmp = yyjson_get_str(applicationName);
+	size_t len = strlen(applicationNameTmp) + 1;
+	LPCSTR applicationNameBuf = (LPCSTR)malloc(len);
+	memset((void*)applicationNameBuf, 0, len);
+	strcpy_s((char*)applicationNameBuf, len, applicationNameTmp);
+	*lpApplicationName = applicationNameBuf;
+
+	yyjson_val* commandLine = yyjson_obj_get(root, "lpCommandLine");
+	LPCSTR commandLineTmp = yyjson_get_str(commandLine);
+	len = strlen(commandLineTmp) + 1;
+	LPCSTR commandLineBuf = (LPCSTR)malloc(len);
+	memset((void*)commandLineBuf, 0, len);
+	strcpy_s((char*)commandLineBuf, len, commandLineTmp);
+	*lpCommandLine = commandLineBuf;
+
+	yyjson_doc_free(doc);
+}
+
 
 /**
  * 往MapView写数据
