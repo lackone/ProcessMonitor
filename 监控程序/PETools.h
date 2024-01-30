@@ -11,13 +11,13 @@ public:
 	VOID RepairIAT(IN LPVOID pImageBuffer);
 	//ReviseRelocation
 	VOID ReviseRelocation(IN LPVOID pImageBuffer, IN DWORD offset);
-	//安装IATHook
+	//InstallIATHook
 	VOID InstallIATHook(IN LPVOID pImageBuffer, IN DWORD oldFunc, IN DWORD newFunc);
-	//卸载IATHook
+	//UnInstallIATHook
 	VOID UnInstallIATHook(IN LPVOID pImageBuffer, IN DWORD oldFunc, IN DWORD newFunc);
-	//安装InlineHook
+	//InstallInlineHook
 	VOID InstallInlineHook(IN HANDLE hProcess, IN DWORD oldFunc, IN DWORD newFunc, IN DWORD offset, IN DWORD size, OUT LPVOID* oldData);
-	//卸载InlineHook
+	//UnInstallInlineHook
 	VOID UnInstallInlineHook(IN HANDLE hProcess, IN DWORD oldFunc, IN DWORD offset, IN DWORD size, IN LPVOID oldData);
 };
 
